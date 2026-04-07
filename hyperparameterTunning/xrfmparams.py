@@ -23,7 +23,7 @@ def _infer_task_and_metric(y: pd.Series) -> tuple[str, str]:
         return "categorical", "accuracy"
     return "regression", "mse"
 
-def _objective(trial, X: pd.DataFrame, y: pd.Series):
+def _objective(trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     task_type, tuning_metric = _infer_task_and_metric(y)
@@ -43,7 +43,7 @@ def _objective(trial, X: pd.DataFrame, y: pd.Series):
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
         "max_leaf_size": int(subset_prop * len(X)),
         "use_temperature_tuning": False,
-        "time_limit_s": 30,
+        "time_limit_s": time_limit_s,
         "rfm_params": {
             "model": {
                 "kernel": "lpq",
@@ -60,7 +60,7 @@ def _objective(trial, X: pd.DataFrame, y: pd.Series):
     }
 
     # run kfold cross validation on the training data
-    kf = KFold(n_splits=5, shuffle=True, random_state=0)
+    kf = KFold(n_splits=folds, shuffle=True, random_state=0)
     result = 0
     for train_index, val_index in kf.split(X):
         X_train_fold, X_val_fold = X.iloc[train_index], X.iloc[val_index]
@@ -91,14 +91,16 @@ def _objective(trial, X: pd.DataFrame, y: pd.Series):
 
     return result / kf.get_n_splits()
 
-def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_s: int | None = None):
+def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteration: int = 50, timeout_s: int | None = None, folds: int = 5):
     """Tune xRFM hyperparameters using Optuna
 
     Args:
         X (pd.DataFrame): Training features
         y (pd.Series): Training targets
         n_trials (int, optional): Number of Optuna trials. Defaults to 50.
+        timeout_iteration (int, optional): Time limit for optimization in iterations. Defaults to 50.
         timeout_s (int | None, optional): Time limit for optimization in seconds. Defaults to None (no time limit).
+        folds (int, optional): Number of folds for cross-validation. Defaults to 5.
 
     Returns:
         optuna.Study: The Optuna study object containing the results of the optimization
@@ -108,7 +110,7 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_s: int |
 
     study = optuna.create_study(direction=direction)
     try:
-        study.optimize(lambda trial: _objective(trial, X, y), n_trials=n_trials, timeout=timeout_s)
+        study.optimize(lambda trial: _objective(trial, X, y, timeout_iteration, folds), n_trials=n_trials, timeout=timeout_s)
     except KeyboardInterrupt:
         print("Optimization interrupted. Returning completed trials so far.")
     return study
