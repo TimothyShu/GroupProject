@@ -5,6 +5,7 @@ from pathlib import Path
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
 import optuna
+from optuna.samplers import TPESampler
 import torch
 from xrfm import xRFM
 
@@ -23,7 +24,7 @@ def _infer_task_and_metric(y: pd.Series) -> tuple[str, str]:
         return "categorical", "accuracy"
     return "regression", "mse"
 
-def _objective(trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
+def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     task_type, tuning_metric = _infer_task_and_metric(y)
@@ -62,7 +63,7 @@ def _objective(trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: i
     # run kfold cross validation on the training data
     kf = KFold(n_splits=folds, shuffle=True, random_state=0)
     result = 0
-    for train_index, val_index in kf.split(X):
+    for step, (train_index, val_index) in enumerate(kf.split(X)):
         X_train_fold, X_val_fold = X.iloc[train_index], X.iloc[val_index]
         y_train_fold, y_val_fold = y_processed.iloc[train_index], y_processed.iloc[val_index]
 
@@ -88,6 +89,12 @@ def _objective(trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: i
                 preds_array = np.argmax(preds_array, axis=1)
             accuracy = np.mean(preds_array.reshape(-1) == y_val_arr.reshape(-1))
             result += accuracy
+        
+        current_average = result / (step + 1)
+        trial.report(current_average, step)
+
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned()
 
     return result / kf.get_n_splits()
 
@@ -108,7 +115,11 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
     _, tuning_metric = _infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
 
-    study = optuna.create_study(direction=direction)
+    sampler = TPESampler(seed=42, multivariate=True)
+
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1)
+
+    study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
     try:
         study.optimize(lambda trial: _objective(trial, X, y, timeout_iteration, folds), n_trials=n_trials, timeout=timeout_s)
     except KeyboardInterrupt:
