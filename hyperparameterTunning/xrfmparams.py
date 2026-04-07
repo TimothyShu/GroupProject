@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import sys
-from pathlib import Path
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
 import optuna
@@ -9,25 +7,15 @@ from optuna.samplers import TPESampler
 import torch
 from xrfm import xRFM
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
-
-
-def _infer_task_and_metric(y: pd.Series) -> tuple[str, str]:
-    if (
-        isinstance(y.dtype, pd.CategoricalDtype)
-        or pd.api.types.is_object_dtype(y)
-        or pd.api.types.is_string_dtype(y)
-        or pd.api.types.is_bool_dtype(y)
-    ):
-        return "categorical", "accuracy"
-    return "regression", "mse"
+try:
+    from hyperparameterTunning.utils import infer_task_and_metric
+except ModuleNotFoundError:
+    from utils import infer_task_and_metric
 
 def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    task_type, tuning_metric = _infer_task_and_metric(y)
+    task_type, tuning_metric = infer_task_and_metric(y)
     y_processed = y.copy()
     if task_type == "categorical":
         y_processed = pd.Series(pd.Categorical(y).codes, index=y.index)
@@ -112,7 +100,7 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
     Returns:
         optuna.Study: The Optuna study object containing the results of the optimization
     """
-    _, tuning_metric = _infer_task_and_metric(y)
+    _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
 
     sampler = TPESampler(seed=42, multivariate=True)
@@ -127,8 +115,14 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
     return study
 
 if __name__ == "__main__":
-    from sklearn.datasets import fetch_california_housing
+    import sys
+    from pathlib import Path
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.append(str(PROJECT_ROOT))
+
     from normalizeFeatures import normalizeFeatures
+    from sklearn.datasets import fetch_california_housing
 
     # Load the California housing dataset
     data = fetch_california_housing(as_frame=True)
@@ -140,7 +134,7 @@ if __name__ == "__main__":
     X_train, X_test = normalizeFeatures(X_train, X_test)
     
 
-    study = tunexrfm(X_train, y_train, n_trials=50, timeout_s=300)
+    study = tunexrfm(X_train, y_train, n_trials=50, timeout_s=5)
     print("Best trial:")
     trial = study.best_trial
     print(f"  Value: {trial.value}")
