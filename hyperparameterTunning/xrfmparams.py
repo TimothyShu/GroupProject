@@ -9,17 +9,14 @@ import torch
 from xrfm import xRFM
 
 try:
-    from hyperparameterTunning.utils import infer_task_and_metric
+    from hyperparameterTunning.utils import infer_task_and_metric, process_categorical_target
 except ModuleNotFoundError:
-    from utils import infer_task_and_metric
+    from utils import infer_task_and_metric, process_categorical_target
 
 def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     task_type, tuning_metric = infer_task_and_metric(y)
-    y_processed = y.copy()
-    if task_type == "categorical":
-        y_processed = pd.Series(pd.Categorical(y).codes, index=y.index)
 
     # Search space for xRFM-specific hyperparameters
 
@@ -27,7 +24,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     exponent =  trial.suggest_float("exponent", 0.7, 1.4)
     norm_p = trial.suggest_float("norm_p", exponent, exponent + 0.8*(2-exponent))
     reg = trial.suggest_float("reg", 1e-6, 10, log=True)
-    subset_prop = trial.suggest_float("subset_prop", 0.01, 0.5) # from 1% to 50% of the data in each leaf
+    subset_prop = trial.suggest_float("subset_prop", 0.10, 0.5) # from 10% to 50% of the data in each leaf
 
     rfm_params = {
         "model": {
@@ -40,6 +37,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
             "reg": reg,
             "iters": 0,
             "return_best_params": True,
+            "verbose": False,
         },
     }
 
@@ -51,13 +49,14 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
             "reg": reg,
             "iters": 0,
             "early_stop_rfm": False,
+            "verbose": False,
         },
     }
 
     params = {
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
         "max_leaf_size": int(subset_prop * len(X)),
-        "use_temperature_tuning": False,
+        "use_temperature_tuning": False, # to speed up validation, but will be turned on for the final training
         "time_limit_s": time_limit_s,
         "rfm_params": rfm_params,
         "default_rfm_params": default_rfm_params,
@@ -68,7 +67,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     result = 0
     for step, (train_index, val_index) in enumerate(kf.split(X)):
         X_train_fold, X_val_fold = X.iloc[train_index], X.iloc[val_index]
-        y_train_fold, y_val_fold = y_processed.iloc[train_index], y_processed.iloc[val_index]
+        y_train_fold, y_val_fold = y.iloc[train_index], y.iloc[val_index]
 
         X_train_arr = X_train_fold.to_numpy(dtype=np.float32)
         X_val_arr = X_val_fold.to_numpy(dtype=np.float32)
@@ -101,26 +100,31 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
 
     return result / kf.get_n_splits()
 
-def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteration: int = 50, timeout_s: int | None = None, folds: int = 5):
+def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteration: int = 5, timeout_s: int | None = None, folds: int = 5):
     """Tune xRFM hyperparameters using Optuna
 
     Args:
         X (pd.DataFrame): Training features
         y (pd.Series): Training targets
         n_trials (int, optional): Number of Optuna trials. Defaults to 50.
-        timeout_iteration (int, optional): Time limit for optimization in iterations. Defaults to 50.
+        timeout_iteration (int, optional): Time limit for optimization in iterations. Defaults to 5.
         timeout_s (int | None, optional): Time limit for optimization in seconds. Defaults to None (no time limit).
         folds (int, optional): Number of folds for cross-validation. Defaults to 5.
 
     Returns:
         optuna.Study: The Optuna study object containing the results of the optimization
     """
+
+    # To speed up tuning we will trim the data down, limit to 10k samples
+    if len(X) > 10000:
+        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
+    
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
 
     sampler = TPESampler(seed=42, multivariate=True)
 
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=2, n_warmup_steps=1)
 
     study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
     try:
@@ -144,12 +148,14 @@ if __name__ == "__main__":
     X = data.data
     y = data.target
 
+    y = process_categorical_target(y)
+
     # normalize the features
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     X_train, X_test = normalizeFeatures(X_train, X_test)
     
 
-    study = tunexrfm(X_train, y_train, n_trials=50, timeout_s=5)
+    study = tunexrfm(X_train, y_train, n_trials=50, timeout_iteration=5, timeout_s=350, folds=3)
     print("Best trial:")
     trial = study.best_trial
     print(f"  Value: {trial.value}")

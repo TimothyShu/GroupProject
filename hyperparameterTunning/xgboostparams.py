@@ -6,17 +6,15 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
 from xgboost import XGBClassifier, XGBRegressor
 
-try:
-    from hyperparameterTunning.utils import infer_task_and_metric
-except ModuleNotFoundError:
-    from utils import infer_task_and_metric
 
+try:
+    from hyperparameterTunning.utils import infer_task_and_metric, process_categorical_target
+except ModuleNotFoundError:
+    from utils import infer_task_and_metric, process_categorical_target
+    
 
 def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: int = 5):
-    task_type, tuning_metric = infer_task_and_metric(y)
-    y_processed = y.copy()
-    if task_type == "categorical":
-        y_processed = pd.Series(pd.Categorical(y).codes, index=y.index)
+    _, tuning_metric = infer_task_and_metric(y)
 
     xgb_device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -41,7 +39,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
 
     for step, (train_index, val_index) in enumerate(kf.split(X)):
         X_train_fold, X_val_fold = X.iloc[train_index], X.iloc[val_index]
-        y_train_fold, y_val_fold = y_processed.iloc[train_index], y_processed.iloc[val_index]
+        y_train_fold, y_val_fold = y.iloc[train_index], y.iloc[val_index]
 
         X_train_arr = X_train_fold.to_numpy(dtype=np.float32)
         X_val_arr = X_val_fold.to_numpy(dtype=np.float32)
@@ -55,7 +53,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
                 **params,
             )
         else:
-            n_classes = int(np.max(y_processed.to_numpy())) + 1
+            n_classes = int(np.max(y.to_numpy())) + 1
             if n_classes <= 2:
                 model = XGBClassifier(
                     objective="binary:logistic",
@@ -109,6 +107,8 @@ if __name__ == "__main__":
     data = fetch_california_housing(as_frame=True)
     X = data.data
     y = data.target
+
+    y = process_categorical_target(y)
 
     X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42)
     study = tunexgboost(X_train, y_train, n_trials=20, timeout_s=300, folds=3)
