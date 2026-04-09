@@ -15,7 +15,7 @@ except ModuleNotFoundError:
 
 def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    preferred_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     task_type, tuning_metric = infer_task_and_metric(y)
 
     # Search space for xRFM-specific hyperparameters
@@ -74,9 +74,17 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         y_train_arr = y_train_fold.to_numpy()
         y_val_arr = y_val_fold.to_numpy()
 
-        # Initialize and train model
-        model = xRFM(**params, device=device, tuning_metric=tuning_metric)
-        model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
+        # Initialize and train model (CUDA first, fallback to CPU on known xRFM CUDA bug)
+        model = xRFM(**params, device=preferred_device, tuning_metric=tuning_metric)
+        try:
+            model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
+        except RuntimeError as error:
+            if preferred_device.type == 'cuda' and 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
+                print('xRFM CUDA path failed; retrying on CPU for this fold.')
+                model = xRFM(**params, device=torch.device('cpu'), tuning_metric=tuning_metric)
+                model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
+            else:
+                raise
         
         # Evaluate performance
         preds = model.predict(X_val_arr)
@@ -115,9 +123,9 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
         optuna.Study: The Optuna study object containing the results of the optimization
     """
 
-    # To speed up tuning we will trim the data down, limit to 10k samples
-    if len(X) > 10000:
-        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
+    # To speed up tuning we will trim the data down, limit to 5k samples
+    if len(X) > 5000:
+        X, _, y, _ = train_test_split(X, y, train_size=5000, random_state=42)
     
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
