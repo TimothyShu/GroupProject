@@ -79,7 +79,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         try:
             model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
         except RuntimeError as error:
-            if preferred_device.type == 'cuda' and 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
+            if 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
                 print('xRFM CUDA path failed; retrying on CPU for this fold.')
                 model = xRFM(**params, device=torch.device('cpu'), tuning_metric=tuning_metric)
                 model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
