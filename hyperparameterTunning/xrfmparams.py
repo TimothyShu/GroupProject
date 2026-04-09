@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import copy
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
 import optuna
@@ -28,24 +29,38 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     reg = trial.suggest_float("reg", 1e-6, 10, log=True)
     subset_prop = trial.suggest_float("subset_prop", 0.01, 0.5) # from 1% to 50% of the data in each leaf
 
+    rfm_params = {
+        "model": {
+            "kernel": "lpq",
+            "bandwidth": np.log(bandwidth),
+            "norm_p": norm_p,
+            "exponent": exponent,
+        },
+        "fit": {
+            "reg": reg,
+            "iters": 0,
+            "return_best_params": True,
+        },
+    }
+
+    default_rfm_params = {
+        "model": copy.deepcopy(rfm_params["model"]),
+        "fit": {
+            "get_agop_best_model": True,
+            "return_best_params": False,
+            "reg": reg,
+            "iters": 0,
+            "early_stop_rfm": False,
+        },
+    }
+
     params = {
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
         "max_leaf_size": int(subset_prop * len(X)),
         "use_temperature_tuning": False,
         "time_limit_s": time_limit_s,
-        "rfm_params": {
-            "model": {
-                "kernel": "lpq",
-                "bandwidth": np.log(bandwidth),
-                "norm_p": norm_p,
-                "exponent": exponent,
-            },
-            "fit": {
-                "reg": reg,
-                "iters": 0,
-                "return_best_params": True,
-            },
-        },
+        "rfm_params": rfm_params,
+        "default_rfm_params": default_rfm_params,
     }
 
     # run kfold cross validation on the training data
