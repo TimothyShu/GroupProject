@@ -4,7 +4,7 @@ import os
 from tabpfn import TabPFNClassifier, TabPFNRegressor
 import torch
 
-from hyperparameterTunning.utils import infer_task_and_metric, process_categorical_target
+from utils import infer_task_and_metric, process_categorical_target
 
 
 def _load_tabpfn_token():

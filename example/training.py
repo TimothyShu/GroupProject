@@ -1,25 +1,29 @@
 import copy
-import pickle
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from tabpfn import TabPFNClassifier, TabPFNRegressor
+from tabpfn import TabPFNClassifier, TabPFNRegressor, save_fitted_tabpfn_model
 import torch
 from xgboost import XGBClassifier, XGBRegressor
 from xrfm import xRFM
-from hyperparameterTunning.utils import infer_task_and_metric
+from utils import infer_task_and_metric
 from hyperparameterTunning.xrfmparams import tunexrfm
 from hyperparameterTunning.xgboostparams import tunexgboost
 
 
-def train(X: pd.DataFrame, y: pd.Series):
+def train(X: pd.DataFrame, y: pd.Series, model_folder: str):
     """This is an example of a training function that will train the 3 models on the same data and save the model for later testing
     Args:
         X (pd.DataFrame): Training features
         y (pd.Series): Training targets
+        model_folder (str): Folder where the trained model will be saved
 
     """
+
+    mopdel_path = Path(model_folder)
+    mopdel_path.mkdir(parents=True, exist_ok=True)
 
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -30,8 +34,30 @@ def train(X: pd.DataFrame, y: pd.Series):
     n_trials = 50
     timeout_s = 3600
     folds = 5
+    
+    # train only when model does not exist
+    if not (mopdel_path / "xrfm_model.pt").exists():
+        _train_xrfm(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
+    
+    if not (mopdel_path / "xgboost_model.json").exists():
+        _train_xgboost(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
+    
+    if not (mopdel_path / "tabpfn_model.pkl").exists():
+        _train_tabpfn(X_train, y_train, model_folder)
 
-    # Hyper parameter tunning
+def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, n_trials: int, timeout_s: int, folds: int, tuning_metric: str, model_folder: str):
+    """This is a helper function to train xRFM with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
+    Args:
+        X_train (pd.DataFrame): Training features, needed xrfm to set centers
+        y_train (pd.Series): Training targets, needed for tuning
+        X_val (pd.DataFrame): Validation features, needed for tuning
+        y_val (pd.Series): Validation targets, needed for tuning
+        n_trials (int): Number of trials for hyperparameter tuning
+        timeout_s (int): Time limit for training in seconds
+        folds (int): Number of folds for cross-validation during tuning
+        tuning_metric (str): The metric to optimize during tuning, either "mse" for regression or "accuracy" for classification
+        model_folder (str): Folder where the trained model is saved
+    """
 
     # xRFM
     timeout_iteration = 5 # might want to increase this for better results, but it will take longer to run
@@ -75,10 +101,38 @@ def train(X: pd.DataFrame, y: pd.Series):
     xrfm_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     xrfm = xRFM(**xrfm_params, device=xrfm_device, tuning_metric=tuning_metric)
 
+    # Training
+
+    try:
+        xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
+    except RuntimeError as error:
+        if xrfm_device.type == 'cuda' and 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
+            print('xRFM CUDA path failed; falling back to CPU for final fit.')
+            xrfm = xRFM(**xrfm_params, device=torch.device('cpu'), tuning_metric=tuning_metric)
+            xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
+        else:
+            raise
+
+    # save
+    torch.save(xrfm.get_state_dict(), f"{model_folder}/xrfm_model.pt")
+    np.save(f"{model_folder}/xrfm_X_train.npy", X_train.to_numpy(dtype=np.float32)) # needed for reconstruction
+
+def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, n_trials: int, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> XGBClassifier | XGBRegressor:
+    """This is a helper function to train xgboost with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
+    Args:
+        X_train (pd.DataFrame): Training features, needed xrfm to set centers
+        y_train (pd.Series): Training targets, needed for tuning
+        X_val (pd.DataFrame): Validation features, needed for tuning
+        y_val (pd.Series): Validation targets, needed for tuning
+        n_trials (int): Number of trials for hyperparameter tuning
+        timeout_s (int): Time limit for training in seconds
+        folds (int): Number of folds for cross-validation during tuning
+        tuning_metric (str): The metric to optimize during tuning, either "mse" for regression or "accuracy" for classification
+        model_folder (str): Folder where the trained model is saved
+    """
+
     # xgboost
     xgboostparams = tunexgboost(X_val, y_val, n_trials=n_trials, timeout_s=timeout_s, folds=folds)
-
-    # xgboostparams earch is relatively fast so we did not use any params to speed it up, we can just use default params for the final training
 
     best_xgboost_params = xgboostparams.best_params
 
@@ -89,7 +143,7 @@ def train(X: pd.DataFrame, y: pd.Series):
             **best_xgboost_params,
         )
     else:
-        n_classes = int(np.max(y.to_numpy())) + 1
+        n_classes = int(np.max(y_train.to_numpy())) + 1
         if n_classes <= 2:
             xgboost = XGBClassifier(
                 objective="binary:logistic",
@@ -104,32 +158,34 @@ def train(X: pd.DataFrame, y: pd.Series):
                 **best_xgboost_params,
             )
 
-    # no need for tabPFN since no hyperparameters to tune
-
-    if tuning_metric == "mse":
-        tabPFN = TabPFNRegressor(device="cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        tabPFN = TabPFNClassifier(device="cuda" if torch.cuda.is_available() else "cpu")
-
-    # Training
-
-    try:
-        xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
-    except RuntimeError as error:
-        if xrfm_device.type == 'cuda' and 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
-            print('xRFM CUDA path failed; falling back to CPU for final fit.')
-            xrfm = xRFM(**xrfm_params, device=torch.device('cpu'), tuning_metric=tuning_metric)
-            xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
-        else:
-            raise
-
+    # training
     xgboost.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=True)
+
+    # save
+    xgboost.save_model(f"{model_folder}/xgboost_model.json")
+
+def _train_tabpfn(X_train: pd.DataFrame, y_train: pd.Series, model_folder: str, context_size: int = 1000):
+    """This is a helper function to train tabPFN, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
+    Args:
+        X_train (pd.DataFrame): Training features, needed xrfm to set centers
+        y_train (pd.Series): Training targets, needed for tuning
+        model_folder (str): Folder where the trained model is saved
+        context_size (int): The number of training samples to use as context for tabPFN, default is 1000, anything over 2-4000 is very slow so be careful increasing this
+    """
+
+    task_type, _ = infer_task_and_metric(y_train)
+
+    if task_type == "categorical":
+        tabPFN = TabPFNClassifier(device="cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        tabPFN = TabPFNRegressor(device="cuda" if torch.cuda.is_available() else "cpu")
+
+    # limit size of training data to reduce inference time
+
+    if len(X_train) > context_size:
+        X_train = X_train.iloc[:context_size]
+        y_train = y_train.iloc[:context_size]
 
     tabPFN.fit(X_train.to_numpy(), y_train.to_numpy())
 
-    # save all the models for later testing
-    torch.save(xrfm.get_state_dict(), "xrfm_model.pt")
-    xgboost.save_model("xgboost_model.json")
-    
-    with open('tabpfn_model.pkl', 'wb') as f:
-        pickle.dump(tabPFN, f)
+    save_fitted_tabpfn_model(tabPFN, f"{model_folder}/tabpfn_model.tabpfn_fit")

@@ -5,12 +5,13 @@ import torch
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
 from xgboost import XGBClassifier, XGBRegressor
+import sys
+from pathlib import Path
 
-
-try:
-    from hyperparameterTunning.utils import infer_task_and_metric, process_categorical_target
-except ModuleNotFoundError:
-    from utils import infer_task_and_metric, process_categorical_target
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+from utils import infer_task_and_metric, process_categorical_target
     
 
 def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: int = 5):
@@ -111,7 +112,7 @@ if __name__ == "__main__":
     y = process_categorical_target(y)
 
     X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42)
-    study = tunexgboost(X_train, y_train, n_trials=20, timeout_s=300, folds=3)
+    study = tunexgboost(X_train, y_train, n_trials=10, timeout_s=300, folds=3)
 
     print("Best trial:")
     trial = study.best_trial

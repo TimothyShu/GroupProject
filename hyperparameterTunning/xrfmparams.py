@@ -7,11 +7,13 @@ import optuna
 from optuna.samplers import TPESampler
 import torch
 from xrfm import xRFM
+import sys
+from pathlib import Path
 
-try:
-    from hyperparameterTunning.utils import infer_task_and_metric, process_categorical_target
-except ModuleNotFoundError:
-    from utils import infer_task_and_metric, process_categorical_target
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+from utils import infer_task_and_metric, process_categorical_target
 
 def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
 
@@ -163,7 +165,7 @@ if __name__ == "__main__":
     X_train, X_test = normalizeFeatures(X_train, X_test)
     
 
-    study = tunexrfm(X_train, y_train, n_trials=50, timeout_iteration=5, timeout_s=350, folds=3)
+    study = tunexrfm(X_train, y_train, n_trials=10, timeout_iteration=5, timeout_s=350, folds=3)
     print("Best trial:")
     trial = study.best_trial
     print(f"  Value: {trial.value}")
