@@ -11,6 +11,7 @@ from xrfm import xRFM
 from utils import infer_task_and_metric
 from hyperparameterTunning.xrfmparams import tunexrfm
 from hyperparameterTunning.xgboostparams import tunexgboost
+import time
 
 
 def train(X: pd.DataFrame, y: pd.Series, model_folder: str):
@@ -34,16 +35,40 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str):
     n_trials = 50
     timeout_s = 3600
     folds = 5
+
+    xrfm_training_time = None
+    xgboost_training_time = None
+    tabpfn_training_time = None
     
     # train only when model does not exist
     if not (mopdel_path / "xrfm_model.pt").exists():
+        start = time.perf_counter()
         _train_xrfm(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
+        end = time.perf_counter()
+        xrfm_training_time = end - start
+        xrfm_training_time_per_sample = xrfm_training_time / len(X_train)
     
     if not (mopdel_path / "xgboost_model.json").exists():
+        start = time.perf_counter()
         _train_xgboost(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
+        end = time.perf_counter()
+        xgboost_training_time = end - start
+        xgboost_training_time_per_sample = xgboost_training_time / len(X_train)
     
     if not (mopdel_path / "tabpfn_model.tabpfn_fit").exists():
+        start = time.perf_counter()
         _train_tabpfn(X_train, y_train, model_folder)
+        end = time.perf_counter()
+        tabpfn_training_time = end - start
+        tabpfn_training_time_per_sample = tabpfn_training_time / len(X_train)
+    
+    print("\nTraining times----------------------------------")
+    if xrfm_training_time is not None:
+        print(f"xRFM Training Time per Sample: {xrfm_training_time_per_sample:.6f} seconds")
+    if xgboost_training_time is not None:
+        print(f"XGBoost Training Time per Sample: {xgboost_training_time_per_sample:.6f} seconds")
+    if tabpfn_training_time is not None:
+        print(f"TabPFN Training Time per Sample: {tabpfn_training_time_per_sample:.6f} seconds")
 
 def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, n_trials: int, timeout_s: int, folds: int, tuning_metric: str, model_folder: str):
     """This is a helper function to train xRFM with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
