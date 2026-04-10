@@ -101,6 +101,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
             "reg": best_xrfm_params["reg"],
             "iters": 0,
             "return_best_params": True,
+            "verbose": False,
         },
     }
 
@@ -112,6 +113,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
             "reg": best_xrfm_params["reg"],
             "iters": 0,
             "early_stop_rfm": False,
+            "verbose": False,
         },
     }
 
