@@ -12,8 +12,8 @@ if __name__ == "__main__":
     from sklearn.datasets import fetch_california_housing
     from sklearn.model_selection import train_test_split
     from utils import process_categorical_target
-    from training import train
-    from testing import test
+    from models.training import train
+    from models.testing import test
 
     # Load the California housing dataset
     data = fetch_california_housing(as_frame=True)
