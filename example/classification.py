@@ -25,4 +25,4 @@ if __name__ == "__main__":
 
     train(X_train, y_train, "models/example/classification")
     
-    test(X_test, y_test, X_train, "models/example/classification")
+    test(X_test, y_test, "models/example/classification")
