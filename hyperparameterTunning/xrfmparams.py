@@ -110,7 +110,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
 
     return result / kf.get_n_splits()
 
-def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteration: int = 5, timeout_s: int | None = None, folds: int = 5):
+def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteration: int = 10, timeout_s: int | None = None, folds: int = 5):
     """Tune xRFM hyperparameters using Optuna
 
     Args:
@@ -125,9 +125,9 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
         optuna.Study: The Optuna study object containing the results of the optimization
     """
 
-    # To speed up tuning we will trim the data down, limit to 5k samples
-    if len(X) > 5000:
-        X, _, y, _ = train_test_split(X, y, train_size=5000, random_state=42)
+    # To speed up tuning we will trim the data down, limit to 10k samples
+    if len(X) > 10000:
+        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
     
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"

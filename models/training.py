@@ -14,7 +14,7 @@ from hyperparameterTunning.xgboostparams import tunexgboost
 import time
 
 
-def train(X: pd.DataFrame, y: pd.Series, model_folder: str):
+def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False):
     """This is an example of a training function that will train the 3 models on the same data and save the model for later testing
     Args:
         X (pd.DataFrame): Training features
@@ -40,22 +40,22 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str):
     xgboost_training_time = None
     tabpfn_training_time = None
     
-    # train only when model does not exist
-    if not (mopdel_path / "xrfm_model.pt").exists():
+    # train only when model does not exist or refit is True
+    if not (mopdel_path / "xrfm_model.pt").exists() or refit:
         start = time.perf_counter()
         _train_xrfm(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
         end = time.perf_counter()
         xrfm_training_time = end - start
         xrfm_training_time_per_sample = xrfm_training_time / len(X_train)
     
-    if not (mopdel_path / "xgboost_model.json").exists():
+    if not (mopdel_path / "xgboost_model.json").exists() or refit:
         start = time.perf_counter()
         _train_xgboost(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
         end = time.perf_counter()
         xgboost_training_time = end - start
         xgboost_training_time_per_sample = xgboost_training_time / len(X_train)
     
-    if not (mopdel_path / "tabpfn_model.tabpfn_fit").exists():
+    if not (mopdel_path / "tabpfn_model.tabpfn_fit").exists() or refit:
         start = time.perf_counter()
         _train_tabpfn(X_train, y_train, model_folder)
         end = time.perf_counter()
