@@ -19,8 +19,8 @@ if __name__ == "__main__":
     n_features = 100
     X = torch.randn(n_samples, n_features, device=device)
     y = target_function(X)
-    X_trainval, X_test, y_trainval, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-    X_train, X_val, y_train, y_val = train_test_split(X_trainval, y_trainval, test_size=0.2, random_state=0)
+    X_trainval, X_test, y_trainval, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(X_trainval, y_trainval, test_size=0.2, random_state=42)
 
     model.fit(X_train, y_train, X_val, y_val)
     y_pred_test = model.predict(X_test)

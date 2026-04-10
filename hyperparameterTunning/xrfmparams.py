@@ -65,7 +65,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     }
 
     # run kfold cross validation on the training data
-    kf = KFold(n_splits=folds, shuffle=True, random_state=0)
+    kf = KFold(n_splits=folds, shuffle=True, random_state=42)
     result = 0
     for step, (train_index, val_index) in enumerate(kf.split(X)):
         X_train_fold, X_val_fold = X.iloc[train_index], X.iloc[val_index]
