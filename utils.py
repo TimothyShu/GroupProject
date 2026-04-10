@@ -21,11 +21,13 @@ def infer_task_and_metric(y: pd.Series) -> tuple[str, str]:
     Returns:
         tuple[str, str]: A tuple containing the task type and the tuning metric
     """
+    num_unique = y.nunique()
     if (
         isinstance(y.dtype, pd.CategoricalDtype)
         or pd.api.types.is_object_dtype(y)
         or pd.api.types.is_string_dtype(y)
         or pd.api.types.is_bool_dtype(y)
+        or num_unique <= 20  # heuristic for categorical target
     ):
         return "categorical", "accuracy"
     return "regression", "mse"

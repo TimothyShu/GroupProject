@@ -42,7 +42,7 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str):
     if not (mopdel_path / "xgboost_model.json").exists():
         _train_xgboost(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
     
-    if not (mopdel_path / "tabpfn_model.pkl").exists():
+    if not (mopdel_path / "tabpfn_model.tabpfn_fit").exists():
         _train_tabpfn(X_train, y_train, model_folder)
 
 def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, n_trials: int, timeout_s: int, folds: int, tuning_metric: str, model_folder: str):

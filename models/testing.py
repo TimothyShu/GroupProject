@@ -42,7 +42,10 @@ def test(X: pd.DataFrame, y: pd.Series, X_train: pd.DataFrame, model_folder: str
     
     # XGBoost
     print("Loading XGBoost model...")
-    xgb_model = xgb.XGBRegressor()
+    if infer_task_and_metric(y)[0] == "categorical":
+        xgb_model = xgb.XGBClassifier()
+    else:
+        xgb_model = xgb.XGBRegressor()
     xgb_model.load_model(f"{model_folder}/xgboost_model.json")
     print("XGBoost model loaded.")
 
