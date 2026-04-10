@@ -35,7 +35,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
         "random_state": 42,
     }
 
-    kf = KFold(n_splits=folds, shuffle=True, random_state=0)
+    kf = KFold(n_splits=folds, shuffle=True, random_state=42)
     result = 0.0
 
     for step, (train_index, val_index) in enumerate(kf.split(X)):
