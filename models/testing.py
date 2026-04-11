@@ -74,10 +74,25 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
     xgb_time_per_sample = xgb_duration / len(X)
     print("Evaluating TabPFN...")
     start = time.perf_counter()
-    tabpfn_preds = tabpfn_model.predict(X.to_numpy())
+    # run in batches, do not run more if timed out
+    X = X.to_numpy()
+    completed = 0
+    tabpfn_preds_list = []
+    while True:
+        X_batch = X[:1000]
+        if len(X_batch) == 0:
+            break
+        X = X[1000:]
+        tabpfn_preds_list.append(tabpfn_model.predict(X_batch))
+        completed += len(X_batch)
+        if time.perf_counter() - start > 30: # if it takes more than 30 seconds, stop to avoid excessively long inference times
+            print("TabPFN inference timed out after 30 seconds. Stopping evaluation.")
+            break
+    tabpfn_preds = np.concatenate(tabpfn_preds_list) if tabpfn_preds_list else np.array([])
+    print(f"TabPFN completed predictions for {completed} samples.")
     end = time.perf_counter()
     tabpfn_duration = end - start
-    tabpfn_time_per_sample = tabpfn_duration / len(X)
+    tabpfn_time_per_sample = tabpfn_duration / completed
     print("Evaluation complete.")
 
     # Here you can add code to calculate metrics like MSE or accuracy depending on the task and print them out

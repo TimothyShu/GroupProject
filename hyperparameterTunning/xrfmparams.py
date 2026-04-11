@@ -78,15 +78,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
 
         # Initialize and train model (CUDA first, fallback to CPU on known xRFM CUDA bug)
         model = xRFM(**params, device=preferred_device, tuning_metric=tuning_metric)
-        try:
-            model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
-        except RuntimeError as error:
-            if 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
-                print('xRFM CUDA path failed; retrying on CPU for this fold.')
-                model = xRFM(**params, device=torch.device('cpu'), tuning_metric=tuning_metric)
-                model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
-            else:
-                raise
+        model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
         
         # Evaluate performance
         preds = model.predict(X_val_arr)
@@ -125,8 +117,8 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, timeout_iteration: int = 10, timeout
     """
 
     # To speed up tuning we will trim the data down, limit to 10k samples
-    # if len(X) > 10000:
-    #     X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
+    if len(X) > 10000:
+        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
     
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"

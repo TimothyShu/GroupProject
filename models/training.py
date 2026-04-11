@@ -184,6 +184,10 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
             )
 
     # training
+    X_train = X_train.to_numpy(dtype=np.float32)
+    X_val = X_val.to_numpy(dtype=np.float32)
+    y_train = y_train.to_numpy()
+    y_val = y_val.to_numpy()
     xgboost.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=True)
 
     # save
