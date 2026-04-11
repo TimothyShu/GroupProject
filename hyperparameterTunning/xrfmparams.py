@@ -110,14 +110,13 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
 
     return result / kf.get_n_splits()
 
-def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteration: int = 10, timeout_s: int | None = None, folds: int = 5):
+def tunexrfm(X: pd.DataFrame, y: pd.Series, timeout_iteration: int = 10, timeout_s: int | None = None, folds: int = 5):
     """Tune xRFM hyperparameters using Optuna
 
     Args:
         X (pd.DataFrame): Training features
         y (pd.Series): Training targets
-        n_trials (int, optional): Number of Optuna trials. Defaults to 50.
-        timeout_iteration (int, optional): Time limit for optimization in iterations. Defaults to 5.
+        timeout_iteration (int, optional): Time limit for optimization in iterations. Defaults to 10.
         timeout_s (int | None, optional): Time limit for optimization in seconds. Defaults to None (no time limit).
         folds (int, optional): Number of folds for cross-validation. Defaults to 5.
 
@@ -126,8 +125,8 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
     """
 
     # To speed up tuning we will trim the data down, limit to 10k samples
-    if len(X) > 10000:
-        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
+    # if len(X) > 10000:
+    #     X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
     
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
@@ -138,7 +137,7 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, n_trials: int = 50, timeout_iteratio
 
     study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
     try:
-        study.optimize(lambda trial: _objective(trial, X, y, timeout_iteration, folds), n_trials=n_trials, timeout=timeout_s)
+        study.optimize(lambda trial: _objective(trial, X, y, timeout_iteration, folds), timeout=timeout_s)
     except KeyboardInterrupt:
         print("Optimization interrupted. Returning completed trials so far.")
     return study

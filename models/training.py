@@ -14,7 +14,7 @@ from hyperparameterTunning.xgboostparams import tunexgboost
 import time
 
 
-def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False):
+def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False, hyperparameter_tuning_timeout_s: int = 60, hyperparameter_tuning_folds: int = 3):
     """This is an example of a training function that will train the 3 models on the same data and save the model for later testing
     Args:
         X (pd.DataFrame): Training features
@@ -32,9 +32,8 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False)
 
 
     # keep these the same for all models for a fair comparison
-    n_trials = 50
-    timeout_s = 3600
-    folds = 5
+    timeout_s = hyperparameter_tuning_timeout_s
+    folds = hyperparameter_tuning_folds
 
     xrfm_training_time = None
     xgboost_training_time = None
@@ -43,14 +42,14 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False)
     # train only when model does not exist or refit is True
     if not (mopdel_path / "xrfm_model.pt").exists() or refit:
         start = time.perf_counter()
-        _train_xrfm(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
+        _train_xrfm(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
         end = time.perf_counter()
         xrfm_training_time = end - start
         xrfm_training_time_per_sample = xrfm_training_time / len(X_train)
     
     if not (mopdel_path / "xgboost_model.json").exists() or refit:
         start = time.perf_counter()
-        _train_xgboost(X_train, y_train, X_val, y_val, n_trials, timeout_s, folds, tuning_metric, model_folder)
+        _train_xgboost(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
         end = time.perf_counter()
         xgboost_training_time = end - start
         xgboost_training_time_per_sample = xgboost_training_time / len(X_train)
@@ -70,7 +69,7 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False)
     if tabpfn_training_time is not None:
         print(f"TabPFN Training Time per Sample: {tabpfn_training_time_per_sample:.6f} seconds")
 
-def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, n_trials: int, timeout_s: int, folds: int, tuning_metric: str, model_folder: str):
+def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str):
     """This is a helper function to train xRFM with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
     Args:
         X_train (pd.DataFrame): Training features, needed xrfm to set centers
@@ -85,8 +84,8 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     """
 
     # xRFM
-    timeout_iteration = 5 # might want to increase this for better results, but it will take longer to run
-    xrfmparams = tunexrfm(X_val, y_val, n_trials=n_trials, timeout_iteration=timeout_iteration, timeout_s=timeout_s, folds=folds)
+    timeout_iteration = 10 # might want to increase this for better results, but it will take longer to run
+    xrfmparams = tunexrfm(X_val, y_val, timeout_iteration=timeout_iteration, timeout_s=timeout_s, folds=folds)
 
     best_xrfm_params = xrfmparams.best_params
 
@@ -133,7 +132,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     try:
         xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
     except RuntimeError as error:
-        if xrfm_device.type == 'cuda' and 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
+        if 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
             print('xRFM CUDA path failed; falling back to CPU for final fit.')
             xrfm = xRFM(**xrfm_params, device=torch.device('cpu'), tuning_metric=tuning_metric)
             xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
@@ -144,14 +143,13 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     torch.save(xrfm.get_state_dict(), f"{model_folder}/xrfm_model.pt")
     np.save(f"{model_folder}/xrfm_X_train.npy", X_train.to_numpy(dtype=np.float32)) # needed for reconstruction
 
-def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, n_trials: int, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> XGBClassifier | XGBRegressor:
+def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> XGBClassifier | XGBRegressor:
     """This is a helper function to train xgboost with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
     Args:
         X_train (pd.DataFrame): Training features, needed xrfm to set centers
         y_train (pd.Series): Training targets, needed for tuning
         X_val (pd.DataFrame): Validation features, needed for tuning
         y_val (pd.Series): Validation targets, needed for tuning
-        n_trials (int): Number of trials for hyperparameter tuning
         timeout_s (int): Time limit for training in seconds
         folds (int): Number of folds for cross-validation during tuning
         tuning_metric (str): The metric to optimize during tuning, either "mse" for regression or "accuracy" for classification
@@ -159,7 +157,7 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
     """
 
     # xgboost
-    xgboostparams = tunexgboost(X_val, y_val, n_trials=n_trials, timeout_s=timeout_s, folds=folds)
+    xgboostparams = tunexgboost(X_val, y_val, timeout_s=timeout_s, folds=folds)
 
     best_xgboost_params = xgboostparams.best_params
 
