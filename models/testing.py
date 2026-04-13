@@ -105,9 +105,7 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
     tabpfn_files = sorted(model_dir.glob("tabpfn_model_ctx*.tabpfn_fit"))
     # Fallback: also look for the old single-model name
     if not tabpfn_files:
-        old = model_dir / "tabpfn_model.tabpfn_fit"
-        if old.exists():
-            tabpfn_files = [old]
+        raise FileNotFoundError(f"No TabPFN model files found in {model_folder} with pattern 'tabpfn_model_ctx*.tabpfn_fit'.")
 
     X_arr = X.to_numpy(dtype=np.float32)
 
