@@ -11,7 +11,7 @@ import re
 from utils import infer_task_and_metric
 
 
-def _safe_auc(y_true, proba):
+def _get_auc(y_true, proba):
     """Compute AUC-ROC from probability scores, handling binary and multiclass."""
     from sklearn.metrics import roc_auc_score
     if proba is None:
@@ -76,15 +76,15 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
 
     print("Evaluating xRFM...")
     start = time.perf_counter()
-    xrfm_preds_raw = np.asarray(xrfm_model.predict(X.to_numpy(dtype=np.float32)))
+    xrfm_preds = xrfm_model.predict(X.to_numpy(dtype=np.float32))
     xrfm_duration = time.perf_counter() - start
     xrfm_time_per_sample = xrfm_duration / len(X)
 
     # If xRFM returns a 2-D probability matrix, take argmax for class labels
-    if xrfm_preds_raw.ndim > 1 and xrfm_preds_raw.shape[1] > 1:
-        xrfm_preds = np.argmax(xrfm_preds_raw, axis=1)
+    if xrfm_preds.ndim > 1 and xrfm_preds.shape[1] > 1:
+        xrfm_preds = np.argmax(xrfm_preds, axis=1)
     else:
-        xrfm_preds = xrfm_preds_raw.reshape(-1)
+        xrfm_preds = xrfm_preds.reshape(-1)
 
     # ── XGBoost ───────────────────────────────────────────
     print("Loading XGBoost model...")
@@ -97,7 +97,6 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
     print("Evaluating XGBoost...")
     start = time.perf_counter()
     xgb_preds = xgb_model.predict(X)
-    xgb_proba = xgb_model.predict_proba(X) if hasattr(xgb_model, 'predict_proba') else None
     xgb_duration = time.perf_counter() - start
     xgb_time_per_sample = xgb_duration / len(X)
 
@@ -146,8 +145,10 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
     else:
         xrfm_acc = np.mean(xrfm_preds == y_arr)
         xgb_acc = np.mean(np.asarray(xgb_preds).reshape(-1) == y_arr)
-        xrfm_auc = _safe_auc(y_arr, xrfm_preds_raw if xrfm_preds_raw.ndim > 1 else xrfm_preds_raw.reshape(-1))
-        xgb_auc = _safe_auc(y_arr, xgb_proba)
+        xrfm_proba = xrfm_model.predict_proba(X.to_numpy(dtype=np.float32))
+        xgb_proba = xgb_model.predict_proba(X) # type: ignore
+        xrfm_auc = _get_auc(y_arr, xrfm_proba)
+        xgb_auc = _get_auc(y_arr, xgb_proba)
 
         print("\nxRFM performance----------------------------------")
         print(f"  Accuracy: {xrfm_acc:.4f}")
@@ -160,7 +161,7 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
         for ctx, r in tabpfn_results.items():
             c = r["completed"]
             acc = np.mean(np.asarray(r["preds"]).reshape(-1) == y_arr[:c])
-            auc = _safe_auc(y_arr[:c], r["proba"][:c] if r["proba"] is not None else None)
+            auc = _get_auc(y_arr[:c], r["proba"][:c] if r["proba"] is not None else None)
             print(f"\nTabPFN (ctx={ctx}) performance--------------------")
             print(f"  Accuracy: {acc:.4f}  (evaluated on {c}/{len(y_arr)} samples)")
             print(f"  AUC-ROC: {auc:.4f}")
