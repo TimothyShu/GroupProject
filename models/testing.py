@@ -24,8 +24,12 @@ def _get_auc(y_true, proba):
     else:
         return roc_auc_score(y_true, proba)
 
+def _get_tabpfn_sample_size_from_filename(filename):
+    """Extract the sample size (context size) from a TabPFN model filename."""
+    m = re.search(r"ctx(\d+)", filename)
+    return int(m.group(1)) if m else None
 
-def _evaluate_tabpfn(tabpfn_model, X_arr, timeout=30):
+def _evaluate_tabpfn(tabpfn_model, X_arr, batch_size=1000, timeout=30):
     """Run TabPFN prediction in batches with a timeout. Returns (preds, proba, completed, duration)."""
     start = time.perf_counter()
     remaining = X_arr.copy()
@@ -33,8 +37,8 @@ def _evaluate_tabpfn(tabpfn_model, X_arr, timeout=30):
     preds_list = []
     proba_list = []
     while len(remaining) > 0:
-        batch = remaining[:1000]
-        remaining = remaining[1000:]
+        batch = remaining[:batch_size]
+        remaining = remaining[batch_size:]
         preds_list.append(tabpfn_model.predict(batch))
         if hasattr(tabpfn_model, 'predict_proba'):
             proba_list.append(tabpfn_model.predict_proba(batch))
@@ -111,13 +115,12 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
 
     tabpfn_results = {}  # ctx_size -> dict of metrics
     for fpath in tabpfn_files:
-        m = re.search(r"ctx(\d+)", fpath.stem)
-        ctx_label = int(m.group(1)) if m else "default"
-        print(f"Loading & evaluating TabPFN (ctx={ctx_label})...")
+        size = _get_tabpfn_sample_size_from_filename(fpath.stem)
+        print(f"Loading & evaluating TabPFN_{size}...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         tabpfn_model = load_fitted_tabpfn_model(str(fpath), device=device)
         preds, proba, completed, duration = _evaluate_tabpfn(tabpfn_model, X_arr)
-        tabpfn_results[ctx_label] = {
+        tabpfn_results[size] = {
             "preds": preds, "proba": proba,
             "completed": completed, "duration": duration,
             "time_per_sample": duration / max(completed, 1),
@@ -134,10 +137,10 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
         print("\nXGBoost performance-------------------------------")
         print(f"  MSE: {xgb_mse:.4f}")
         print(f"  Inference Time per Sample: {xgb_time_per_sample:.6f}s")
-        for ctx, r in tabpfn_results.items():
+        for size, r in tabpfn_results.items():
             c = r["completed"]
             mse = np.mean((r["preds"].reshape(-1) - y_arr[:c]) ** 2)
-            print(f"\nTabPFN (ctx={ctx}) performance--------------------")
+            print(f"\nTabPFN_{size} performance--------------------")
             print(f"  MSE: {mse:.4f}  (evaluated on {c}/{len(y_arr)} samples)")
             print(f"  Inference Time per Sample: {r['time_per_sample']:.6f}s")
     else:
@@ -156,11 +159,11 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
         print(f"  Accuracy: {xgb_acc:.4f}")
         print(f"  AUC-ROC: {xgb_auc:.4f}")
         print(f"  Inference Time per Sample: {xgb_time_per_sample:.6f}s")
-        for ctx, r in tabpfn_results.items():
+        for size, r in tabpfn_results.items():
             c = r["completed"]
             acc = np.mean(np.asarray(r["preds"]).reshape(-1) == y_arr[:c])
             auc = _get_auc(y_arr[:c], r["proba"][:c] if r["proba"] is not None else None)
-            print(f"\nTabPFN (ctx={ctx}) performance--------------------")
+            print(f"\nTabPFN_{size} performance--------------------")
             print(f"  Accuracy: {acc:.4f}  (evaluated on {c}/{len(y_arr)} samples)")
             print(f"  AUC-ROC: {auc:.4f}")
             print(f"  Inference Time per Sample: {r['time_per_sample']:.6f}s")
