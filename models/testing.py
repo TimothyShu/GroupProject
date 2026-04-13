@@ -48,7 +48,9 @@ def _evaluate_tabpfn(tabpfn_model, X_arr, batch_size=1000, timeout=30):
             break
     duration = time.perf_counter() - start
     preds = np.concatenate(preds_list)
-    proba = np.concatenate(proba_list)
+    proba = None
+    if hasattr(tabpfn_model, 'predict_proba'):
+        proba = np.concatenate(proba_list)
     return preds, proba, completed, duration
 
 
