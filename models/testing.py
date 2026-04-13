@@ -47,8 +47,8 @@ def _evaluate_tabpfn(tabpfn_model, X_arr, batch_size=1000, timeout=30):
             print(f"TabPFN inference timed out after {timeout}s. Stopped at {completed} samples.")
             break
     duration = time.perf_counter() - start
-    preds = np.concatenate(preds_list) if preds_list else np.array([])
-    proba = np.concatenate(proba_list) if proba_list else None
+    preds = np.concatenate(preds_list)
+    proba = np.concatenate(proba_list)
     return preds, proba, completed, duration
 
 
@@ -162,7 +162,7 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
         for size, r in tabpfn_results.items():
             c = r["completed"]
             acc = np.mean(np.asarray(r["preds"]).reshape(-1) == y_arr[:c])
-            auc = _get_auc(y_arr[:c], r["proba"][:c] if r["proba"] is not None else None)
+            auc = _get_auc(y_arr[:c], r["proba"][:c])
             print(f"\nTabPFN_{size} performance--------------------")
             print(f"  Accuracy: {acc:.4f}  (evaluated on {c}/{len(y_arr)} samples)")
             print(f"  AUC-ROC: {auc:.4f}")
