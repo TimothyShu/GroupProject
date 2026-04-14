@@ -21,7 +21,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
 
     params = {
         "eta": trial.suggest_float("eta", 1e-2, 3e-1, log=True),
-        "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
+        "n_estimators": 5000,
         "gamma": trial.suggest_float("gamma", 0.0, 10.0),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
         "min_child_weight": trial.suggest_float("min_child_weight", 1.0, 20.0, log=True),
@@ -30,6 +30,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
         "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
         "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 100.0, log=True),
+        "early_stopping_rounds": 50,
         "tree_method": "hist",
         "device": xgb_device,
         "random_state": 42,
@@ -69,7 +70,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
                     **params,
                 )
 
-        model.fit(X_train_arr, y_train_arr, verbose=False)
+        model.fit(X_train_arr, y_train_arr, eval_set=[(X_val_arr, y_val_arr)], verbose=False)
         preds = model.predict(X_val_arr)
 
         if tuning_metric == "mse":
