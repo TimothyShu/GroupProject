@@ -1,6 +1,8 @@
 import pandas as pd
 
 from sklearn.compose import make_column_selector, make_column_transformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 def normalizeFeatures(X_train: pd.DataFrame, X_test: pd.DataFrame, excludeColumns = []) -> pd.DataFrame:
@@ -22,9 +24,9 @@ def normalizeFeatures(X_train: pd.DataFrame, X_test: pd.DataFrame, excludeColumn
 
     # These should be pipelines but we are only doing tests and not deploying so is fine
     transformer = make_column_transformer(
-        (OneHotEncoder(handle_unknown='ignore', sparse_output=False), 
+        (make_pipeline(SimpleImputer(strategy='most_frequent'), OneHotEncoder(handle_unknown='ignore', sparse_output=False)), 
         make_column_selector(dtype_include=['object', 'category'], dtype_exclude=['bool'])),
-        (StandardScaler(),
+        (make_pipeline(SimpleImputer(strategy='median'), StandardScaler()),
         make_column_selector(dtype_include=['number'], dtype_exclude=['bool'])),
         
         remainder='passthrough'
