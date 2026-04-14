@@ -171,7 +171,25 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
     xgboostparams = tunexgboost(X_train, y_train, timeout_s=timeout_s, folds=folds)
     tuning_time = time.perf_counter() - tune_start
 
+    xgb_n_estimators = 2000
+    early_stopping_rounds = 50
     best_xgboost_params = xgboostparams.best_params
+    xgb_device = "cuda" if torch.cuda.is_available() else "cpu"
+    best_xgboost_params = {
+        "eta": best_xgboost_params["eta"],
+        "n_estimators": xgb_n_estimators,
+        "gamma": best_xgboost_params["gamma"],
+        "max_depth": best_xgboost_params["max_depth"],
+        "min_child_weight": best_xgboost_params["min_child_weight"],
+        "subsample": best_xgboost_params["subsample"],
+        "colsample_bytree": best_xgboost_params["colsample_bytree"],
+        "reg_alpha": best_xgboost_params["reg_alpha"],
+        "reg_lambda": best_xgboost_params["reg_lambda"],
+        "tree_method": "hist",
+        "early_stopping_rounds": early_stopping_rounds,
+        "device": xgb_device,
+        "random_state": 42,
+    }
 
     if tuning_metric == "mse":
         xgboost = XGBRegressor(
@@ -201,7 +219,12 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
     y_train = y_train.to_numpy()
     y_val = y_val.to_numpy()
     fit_start = time.perf_counter()
-    xgboost.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=True)
+    xgboost.fit(
+        X_train,
+        y_train,
+        eval_set=[(X_val, y_val)],
+        verbose=False,
+    )
     fit_time = time.perf_counter() - fit_start
 
     # save
