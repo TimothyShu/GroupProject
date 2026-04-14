@@ -18,19 +18,21 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
     _, tuning_metric = infer_task_and_metric(y)
 
     xgb_device = "cuda" if torch.cuda.is_available() else "cpu"
+    # low estimators for tunning, increased later for training
+    xgb_n_estimators = 500
+    early_stopping_rounds = 20
 
     params = {
         "eta": trial.suggest_float("eta", 1e-2, 3e-1, log=True),
-        "n_estimators": 5000,
-        "gamma": trial.suggest_float("gamma", 0.0, 10.0),
-        "max_depth": trial.suggest_int("max_depth", 3, 12),
-        "min_child_weight": trial.suggest_float("min_child_weight", 1.0, 20.0, log=True),
-        "max_delta_step": trial.suggest_float("max_delta_step", 0.0, 10.0),
+        "n_estimators": xgb_n_estimators,
+        "gamma": trial.suggest_float("gamma", 0.0, 10),
+        "max_depth": trial.suggest_int("max_depth", 4, 10),
+        "min_child_weight": trial.suggest_float("min_child_weight", 1.0, 10.0, log=True),
         "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-        "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 100.0, log=True),
-        "early_stopping_rounds": 50,
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 0.8),
+        "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
+        "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
+        "early_stopping_rounds": early_stopping_rounds,
         "tree_method": "hist",
         "device": xgb_device,
         "random_state": 42,
@@ -70,7 +72,12 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
                     **params,
                 )
 
-        model.fit(X_train_arr, y_train_arr, eval_set=[(X_val_arr, y_val_arr)], verbose=False)
+        model.fit(
+            X_train_arr,
+            y_train_arr,
+            eval_set=[(X_val_arr, y_val_arr)],
+            verbose=False,
+        )
         preds = model.predict(X_val_arr)
 
         if tuning_metric == "mse":
@@ -89,6 +96,11 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
 
 
 def tunexgboost(X: pd.DataFrame, y: pd.Series, timeout_s: int | None = None, folds: int = 5):
+
+    # To speed up tuning we will trim the data down, limit to 10k samples
+    if len(X) > 10000:
+        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
+    
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
 
