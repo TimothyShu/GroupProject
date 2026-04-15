@@ -47,14 +47,16 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False,
     
     # train only when model does not exist or refit is True
     if not (mopdel_path / "xrfm_model.pt").exists() or refit:
-        tuning_t, fit_t = _train_xrfm(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
+        tuning_t, fit_t, n_trials = _train_xrfm(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
         xrfm_tuning_time = tuning_t
         xrfm_fit_time = fit_t
+        xrfm_tunning_trials = n_trials
     
     if not (mopdel_path / "xgboost_model.json").exists() or refit:
-        tuning_t, fit_t = _train_xgboost(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
+        tuning_t, fit_t, n_trials = _train_xgboost(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
         xgboost_tuning_time = tuning_t
         xgboost_fit_time = fit_t
+        xgboost_fit_trials = n_trials
     
     for ctx_size in tabpfn_context_sizes:
         model_name = f"tabpfn_model_ctx{ctx_size}.tabpfn_fit"
@@ -67,13 +69,15 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False,
     if xrfm_tuning_time is not None:
         print(f"xRFM Tuning Time: {xrfm_tuning_time:.2f}s | Fit Time: {xrfm_fit_time:.2f}s | Total: {xrfm_tuning_time + xrfm_fit_time:.2f}s")
         print(f"xRFM Fit Time per Sample: {xrfm_fit_time / len(X_train):.6f} seconds")
+        print(f"xRFM Tuning Trials: {xrfm_tunning_trials}")
     if xgboost_tuning_time is not None:
         print(f"XGBoost Tuning Time: {xgboost_tuning_time:.2f}s | Fit Time: {xgboost_fit_time:.2f}s | Total: {xgboost_tuning_time + xgboost_fit_time:.2f}s")
         print(f"XGBoost Fit Time per Sample: {xgboost_fit_time / len(X_train):.6f} seconds")
+        print(f"XGBoost Tuning Trials: {xgboost_fit_trials}")
     for ctx_size, t in tabpfn_times.items():
         print(f"TabPFN (ctx={ctx_size}) Fit Time: {t:.2f}s (no tuning) | per Sample: {t / min(ctx_size, len(X_train)):.6f}s")
 
-def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> tuple[float, float]:
+def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> tuple[float, float, int]:
     """This is a helper function to train xRFM with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
     Args:
         X_train (pd.DataFrame): Training features, needed xrfm to set centers
@@ -92,6 +96,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     tune_start = time.perf_counter()
     xrfmparams = tunexrfm(X_train, y_train, timeout_iteration=timeout_iteration, timeout_s=timeout_s, folds=folds)
     tuning_time = time.perf_counter() - tune_start
+    n_trials = len(xrfmparams.trials)
 
     best_xrfm_params = xrfmparams.best_params
 
@@ -151,9 +156,9 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     torch.save(xrfm.get_state_dict(), f"{model_folder}/xrfm_model.pt")
     np.save(f"{model_folder}/xrfm_X_train.npy", X_train.to_numpy(dtype=np.float32)) # needed for reconstruction
 
-    return tuning_time, fit_time
+    return tuning_time, fit_time, n_trials
 
-def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> tuple[float, float]:
+def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> tuple[float, float, int]:
     """This is a helper function to train xgboost with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
     Args:
         X_train (pd.DataFrame): Training features, needed xrfm to set centers
@@ -170,6 +175,7 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
     tune_start = time.perf_counter()
     xgboostparams = tunexgboost(X_train, y_train, timeout_s=timeout_s, folds=folds)
     tuning_time = time.perf_counter() - tune_start
+    n_trials = len(xgboostparams.trials)
 
     xgb_n_estimators = 2000
     early_stopping_rounds = 50
@@ -230,7 +236,7 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
     # save
     xgboost.save_model(f"{model_folder}/xgboost_model.json")
 
-    return tuning_time, fit_time
+    return tuning_time, fit_time, n_trials
 
 def _train_tabpfn(X_train: pd.DataFrame, y_train: pd.Series, model_folder: str, context_size: int = 1000):
     """This is a helper function to train tabPFN, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
