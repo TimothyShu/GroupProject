@@ -6,16 +6,18 @@ from sklearn.model_selection import KFold, train_test_split
 import optuna
 from optuna.samplers import TPESampler
 import torch
-from xrfm import xRFM
 import sys
 from pathlib import Path
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 from utils import infer_task_and_metric, process_categorical_target
+from xrfmWithSubsetSize import xRFMWithSubsetSize as xRFM
 
-def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int, folds: int = 5):
+
+def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_limit_s: int | None = None, folds: int = 5):
 
     preferred_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     task_type, tuning_metric = infer_task_and_metric(y)
@@ -55,14 +57,22 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         },
     }
 
-    params = {
-        # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-        "max_leaf_size": int(subset_prop * len(X)),
-        "use_temperature_tuning": False, # to speed up validation, but will be turned on for the final training
-        "time_limit_s": time_limit_s,
-        "rfm_params": rfm_params,
-        "default_rfm_params": default_rfm_params,
-    }
+    if time_limit_s is not None:
+        params = {
+            # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
+            "max_leaf_size": int(subset_prop * len(X)),
+            "use_temperature_tuning": False, # to speed up validation, but will be turned on for the final training
+            "time_limit_s": time_limit_s,
+            "rfm_params": rfm_params,
+            "default_rfm_params": default_rfm_params,
+        }
+    else:
+        params = {
+            "max_leaf_size": int(subset_prop * len(X)),
+            "use_temperature_tuning": False,
+            "rfm_params": rfm_params,
+            "default_rfm_params": default_rfm_params,
+        }
 
     # run kfold cross validation on the training data
     kf = KFold(n_splits=folds, shuffle=True, random_state=42)
@@ -77,7 +87,8 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         y_val_arr = y_val_fold.to_numpy()
 
         # Initialize and train model (CUDA first, fallback to CPU on known xRFM CUDA bug)
-        model = xRFM(**params, device=preferred_device, tuning_metric=tuning_metric)
+        split_subset_size = max(1000, int(0.8 * params["max_leaf_size"]))
+        model = xRFM(**params, device=preferred_device, tuning_metric=tuning_metric, split_subset_size=split_subset_size)
         model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
         
         # Evaluate performance
@@ -102,23 +113,19 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
 
     return result / kf.get_n_splits()
 
-def tunexrfm(X: pd.DataFrame, y: pd.Series, timeout_iteration: int = 10, timeout_s: int | None = None, folds: int = 5):
+def tunexrfm(X: pd.DataFrame, y: pd.Series, timeout_iteration: int | None = None, timeout_s: int | None = None, folds: int = 5, trials: int | None = None) -> optuna.Study:
     """Tune xRFM hyperparameters using Optuna
 
     Args:
         X (pd.DataFrame): Training features
         y (pd.Series): Training targets
-        timeout_iteration (int, optional): Time limit for optimization in iterations. Defaults to 10.
+        timeout_iteration (int | None, optional): Time limit for optimization in iterations. Defaults to None.
         timeout_s (int | None, optional): Time limit for optimization in seconds. Defaults to None (no time limit).
         folds (int, optional): Number of folds for cross-validation. Defaults to 5.
-
+        trials (int | None, optional): Number of trials for hyperparameter tuning. Defaults to None (no limit).
     Returns:
         optuna.Study: The Optuna study object containing the results of the optimization
     """
-
-    # To speed up tuning we will trim the data down, limit to 10k samples
-    if len(X) > 10000:
-        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
     
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
@@ -129,7 +136,10 @@ def tunexrfm(X: pd.DataFrame, y: pd.Series, timeout_iteration: int = 10, timeout
 
     study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
     try:
-        study.optimize(lambda trial: _objective(trial, X, y, timeout_iteration, folds), timeout=timeout_s)
+        if trials is not None:
+            study.optimize(lambda trial: _objective(trial, X, y, timeout_iteration, folds), n_trials=trials)
+        else:
+            study.optimize(lambda trial: _objective(trial, X, y, folds), timeout=timeout_s)
     except KeyboardInterrupt:
         print("Optimization interrupted. Returning completed trials so far.")
     return study

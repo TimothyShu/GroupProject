@@ -1,5 +1,6 @@
 import copy
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -7,14 +8,18 @@ from sklearn.model_selection import train_test_split
 from tabpfn import TabPFNClassifier, TabPFNRegressor, save_fitted_tabpfn_model
 import torch
 from xgboost import XGBClassifier, XGBRegressor
-from xrfm import xRFM
 from utils import infer_task_and_metric
 from hyperparameterTunning.xrfmparams import tunexrfm
 from hyperparameterTunning.xgboostparams import tunexgboost
 import time
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
-def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False, hyperparameter_tuning_timeout_s: int = 60, hyperparameter_tuning_folds: int = 3, tabpfn_context_sizes: list[int] | None = None):
+from xrfmWithSubsetSize import xRFMWithSubsetSize as xRFM
+
+def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False, hyperparameter_tuning_timeout_s: int | None = None, hyperparameter_tuning_folds: int = 3, tabpfn_context_sizes: list[int] | None = None, trials: int | None = None):
     """This is an example of a training function that will train the 3 models on the same data and save the model for later testing
     Args:
         X (pd.DataFrame): Training features
@@ -31,11 +36,6 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False,
 
     _, tuning_metric = infer_task_and_metric(y)
 
-
-    # keep these the same for all models for a fair comparison
-    timeout_s = hyperparameter_tuning_timeout_s
-    folds = hyperparameter_tuning_folds
-
     xrfm_tuning_time = None
     xrfm_fit_time = None
     xgboost_tuning_time = None
@@ -47,13 +47,13 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False,
     
     # train only when model does not exist or refit is True
     if not (mopdel_path / "xrfm_model.pt").exists() or refit:
-        tuning_t, fit_t, n_trials = _train_xrfm(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
+        tuning_t, fit_t, n_trials = _train_xrfm(X_train, y_train, X_val, y_val, hyperparameter_tuning_timeout_s, hyperparameter_tuning_folds, tuning_metric, model_folder, trials)
         xrfm_tuning_time = tuning_t
         xrfm_fit_time = fit_t
         xrfm_tunning_trials = n_trials
     
     if not (mopdel_path / "xgboost_model.json").exists() or refit:
-        tuning_t, fit_t, n_trials = _train_xgboost(X_train, y_train, X_val, y_val, timeout_s, folds, tuning_metric, model_folder)
+        tuning_t, fit_t, n_trials = _train_xgboost(X_train, y_train, X_val, y_val, hyperparameter_tuning_timeout_s, hyperparameter_tuning_folds, tuning_metric, model_folder, trials)
         xgboost_tuning_time = tuning_t
         xgboost_fit_time = fit_t
         xgboost_fit_trials = n_trials
@@ -77,7 +77,7 @@ def train(X: pd.DataFrame, y: pd.Series, model_folder: str, refit: bool = False,
     for ctx_size, t in tabpfn_times.items():
         print(f"TabPFN (ctx={ctx_size}) Fit Time: {t:.2f}s (no tuning) | per Sample: {t / min(ctx_size, len(X_train)):.6f}s")
 
-def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> tuple[float, float, int]:
+def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int | None, folds: int, tuning_metric: str, model_folder: str, n_trials: int) -> tuple[float, float, int]:
     """This is a helper function to train xRFM with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
     Args:
         X_train (pd.DataFrame): Training features, needed xrfm to set centers
@@ -85,16 +85,15 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
         X_val (pd.DataFrame): Validation features, needed for tuning
         y_val (pd.Series): Validation targets, needed for tuning
         n_trials (int): Number of trials for hyperparameter tuning
-        timeout_s (int): Time limit for training in seconds
+        timeout_s (int | None): Time limit for training in seconds
         folds (int): Number of folds for cross-validation during tuning
         tuning_metric (str): The metric to optimize during tuning, either "mse" for regression or "accuracy" for classification
         model_folder (str): Folder where the trained model is saved
     """
 
     # xRFM
-    timeout_iteration = 10 # might want to increase this for better results, but it will take longer to run
     tune_start = time.perf_counter()
-    xrfmparams = tunexrfm(X_train, y_train, timeout_iteration=timeout_iteration, timeout_s=timeout_s, folds=folds)
+    xrfmparams = tunexrfm(X_train, y_train, timeout_s=timeout_s, folds=folds, trials=n_trials)
     tuning_time = time.perf_counter() - tune_start
     n_trials = len(xrfmparams.trials)
 
@@ -136,7 +135,8 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     }
 
     xrfm_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    xrfm = xRFM(**xrfm_params, device=xrfm_device, tuning_metric=tuning_metric)
+    split_subset_size = max(1000, int(0.8 * xrfm_params["max_leaf_size"]))
+    xrfm = xRFM(**xrfm_params, device=xrfm_device, tuning_metric=tuning_metric, split_subset_size=split_subset_size)
 
     # Training
 
@@ -158,14 +158,14 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
 
     return tuning_time, fit_time, n_trials
 
-def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int, folds: int, tuning_metric: str, model_folder: str) -> tuple[float, float, int]:
+def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, timeout_s: int | None, folds: int, tuning_metric: str, model_folder: str, n_trials: int) -> tuple[float, float, int]:
     """This is a helper function to train xgboost with hyperparameter tuning, we separate it out from the main train function to make it easier to call from the hyperparameter tuning function without having to run the whole training process
     Args:
         X_train (pd.DataFrame): Training features, needed xrfm to set centers
         y_train (pd.Series): Training targets, needed for tuning
         X_val (pd.DataFrame): Validation features, needed for tuning
         y_val (pd.Series): Validation targets, needed for tuning
-        timeout_s (int): Time limit for training in seconds
+        timeout_s (int | None): Time limit for training in seconds
         folds (int): Number of folds for cross-validation during tuning
         tuning_metric (str): The metric to optimize during tuning, either "mse" for regression or "accuracy" for classification
         model_folder (str): Folder where the trained model is saved
@@ -173,7 +173,7 @@ def _train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
 
     # xgboost
     tune_start = time.perf_counter()
-    xgboostparams = tunexgboost(X_train, y_train, timeout_s=timeout_s, folds=folds)
+    xgboostparams = tunexgboost(X_train, y_train, timeout_s=timeout_s, folds=folds, trials=n_trials)
     tuning_time = time.perf_counter() - tune_start
     n_trials = len(xgboostparams.trials)
 

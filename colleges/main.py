@@ -70,7 +70,7 @@ if __name__ == "__main__":
         X = X.drop(columns=["religious_affiliation"])
 
     # 8. Trying to drop columns to not make xrfm crash
-    missing_thresh = 0.3
+    missing_thresh = 0.7
     high_missing = [c for c in X.columns if X[c].isna().sum() / len(X) > missing_thresh]
     if high_missing:
         print(f"Dropping {len(high_missing)} columns with >{missing_thresh*100:.0f}% missing: {high_missing}")
@@ -88,6 +88,6 @@ if __name__ == "__main__":
 
     # 80 columns more manageable, otherwise overfit and too much memory
 
-    train(X_train, y_train, "models/colleges", refit=False, hyperparameter_tuning_timeout_s=120, hyperparameter_tuning_folds=3)
+    train(X_train, y_train, "models/colleges", refit=True, hyperparameter_tuning_timeout_s=120, hyperparameter_tuning_folds=3)
     
     test(X_test, y_test, "models/colleges")

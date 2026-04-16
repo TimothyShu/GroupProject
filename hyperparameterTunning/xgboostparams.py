@@ -95,11 +95,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, folds: 
     return result / kf.get_n_splits()
 
 
-def tunexgboost(X: pd.DataFrame, y: pd.Series, timeout_s: int | None = None, folds: int = 5):
-
-    # To speed up tuning we will trim the data down, limit to 10k samples
-    if len(X) > 10000:
-        X, _, y, _ = train_test_split(X, y, train_size=10000, random_state=42)
+def tunexgboost(X: pd.DataFrame, y: pd.Series, timeout_s: int | None = None, folds: int = 5, trials: int | None = None) -> optuna.study.Study:
     
     _, tuning_metric = infer_task_and_metric(y)
     direction = "minimize" if tuning_metric == "mse" else "maximize"
@@ -109,7 +105,10 @@ def tunexgboost(X: pd.DataFrame, y: pd.Series, timeout_s: int | None = None, fol
 
     study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
     try:
-        study.optimize(lambda trial: _objective(trial, X, y, folds), timeout=timeout_s)
+        if trials is not None:
+            study.optimize(lambda trial: _objective(trial, X, y, folds), n_trials=trials)
+        else:
+            study.optimize(lambda trial: _objective(trial, X, y, folds), timeout=timeout_s)
     except KeyboardInterrupt:
         print("Optimization interrupted. Returning completed trials so far.")
     return study
