@@ -68,16 +68,10 @@ def test(X: pd.DataFrame, y: pd.Series, model_folder: str):
 
     # ── xRFM ──────────────────────────────────────────────
     print("Loading xRFM model...")
-    xrfm_model = xRFM(device=torch.device('cpu'))
-    state_dict = torch.load(f"{model_folder}/xrfm_model.pt", map_location="cpu", weights_only=False)
+    xrfm_model = xRFM(device=torch.device('cuda'))
+    state_dict = torch.load(f"{model_folder}/xrfm_model.pt", map_location="cuda", weights_only=False)
     xrfm_X_train_path = Path(model_folder) / "xrfm_X_train.npy"
-    if xrfm_X_train_path.exists():
-        xrfm_X_train = torch.as_tensor(np.load(xrfm_X_train_path), dtype=torch.float32)
-    else:
-        raise FileNotFoundError(
-            f"{xrfm_X_train_path} not found. Re-run training so the exact fit "
-            "matrix is saved alongside the model."
-        )
+    xrfm_X_train = torch.as_tensor(np.load(xrfm_X_train_path), dtype=torch.float32, device=torch.device('cuda'))
     xrfm_model.load_state_dict(state_dict, X_train=xrfm_X_train)
 
     print("Evaluating xRFM...")

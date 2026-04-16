@@ -141,15 +141,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     # Training
 
     fit_start = time.perf_counter()
-    try:
-        xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
-    except RuntimeError as error:
-        if 'Boolean value of Tensor with more than one value is ambiguous' in str(error):
-            print('xRFM CUDA path failed; falling back to CPU for final fit.')
-            xrfm = xRFM(**xrfm_params, device=torch.device('cpu'), tuning_metric=tuning_metric)
-            xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
-        else:
-            raise
+    xrfm.fit(X_train.to_numpy(dtype=np.float32), y_train.to_numpy(), X_val.to_numpy(dtype=np.float32), y_val.to_numpy())
     fit_time = time.perf_counter() - fit_start
 
     # save
