@@ -29,7 +29,7 @@ def _get_tabpfn_sample_size_from_filename(filename):
     m = re.search(r"ctx(\d+)", filename)
     return int(m.group(1)) if m else None
 
-def _evaluate_tabpfn(tabpfn_model, X_arr, batch_size=1000, timeout=30):
+def _evaluate_tabpfn(tabpfn_model, X_arr, batch_size=100, timeout=30):
     """Run TabPFN prediction in batches with a timeout. Returns (preds, proba, completed, duration)."""
     start = time.perf_counter()
     remaining = X_arr.copy()

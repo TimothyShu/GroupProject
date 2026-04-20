@@ -40,7 +40,11 @@ if __name__ == "__main__":
     mask = y.notna()
     X, y = X[mask].reset_index(drop=True), y[mask].reset_index(drop=True)
 
-    y = process_categorical_target(y)
+    task_type, _ = infer_task_and_metric(y)
+
+    print(f"Initial target type: {task_type}")
+
+    #y = process_categorical_target(y) program incorrectly processes as categorical
 
     target_type, metric = infer_task_and_metric(y)
 
