@@ -61,15 +61,14 @@ def _retrain_xrfm(X_train, y_train, X_val, y_val, tuning_metric):
 
     xrfm_params = {
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-        "max_leaf_size": int(best_xrfm_params["subset_prop"] * len(X_train)),
+        "max_leaf_size": 60000,
         "use_temperature_tuning": True, # we turned this off for validation to speed it up, but we will turn it on for the final training
         "rfm_params": leaf_rfm_params,
         "default_rfm_params": split_rfm_params,
     }
 
     xrfm_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    split_subset_size = max(1000, int(0.8 * xrfm_params["max_leaf_size"]))
-    xrfm = xRFM(**xrfm_params, device=xrfm_device, tuning_metric=tuning_metric, split_subset_size=split_subset_size)
+    xrfm = xRFM(**xrfm_params, device=xrfm_device, tuning_metric=tuning_metric)
 
     # Training
 

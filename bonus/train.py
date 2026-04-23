@@ -13,8 +13,6 @@ from resxrfm import xRFM_res
 
 from utils import infer_task_and_metric
 
-subset_prop = 0.5 # use this so that all splits are same size for comparison
-
 def train(X: pd.DataFrame, y: pd.Series, hyperparameter_tuning_timeout_s: int | None = None, hyperparameter_tuning_folds: int = 3, trials: int | None = None, same_splits: bool = True) -> tuple[xRFM, xRFM_res]:
     """This is an example of a training function that will train the 3 models on the same data and save the model for later testing
     Args:
@@ -81,7 +79,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
 
     xrfm_params = {
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-        "max_leaf_size": int(subset_prop * len(X_train)) if same_splits else best_xrfm_params["max_leaf_size"],
+        "max_leaf_size": 60000,
         "use_temperature_tuning": True, # we turned this off for validation to speed it up, but we will turn it on for the final training
         "rfm_params": leaf_rfm_params,
         "default_rfm_params": split_rfm_params,
@@ -143,7 +141,7 @@ def _train_resxrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFram
 
     xrfm_params = {
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-        "max_leaf_size": int(subset_prop * len(X_train)) if same_splits else best_xrfm_params["max_leaf_size"],
+        "max_leaf_size": 60000,
         "use_temperature_tuning": True, # we turned this off for validation to speed it up, but we will turn it on for the final training
         "rfm_params": leaf_rfm_params,
         "default_rfm_params": split_rfm_params,
@@ -169,11 +167,6 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     exponent =  trial.suggest_float("exponent", 0.7, 1.4)
     norm_p = trial.suggest_float("norm_p", exponent, exponent + 0.8*(2-exponent))
     reg = trial.suggest_float("reg", 1e-6, 10, log=True)
-
-    if not same_splits:
-        max_leaf_size = trial.suggest_int("max_leaf_size", int(0.01 * len(X)), int(0.5 * len(X)))
-    else:
-        max_leaf_size = int(subset_prop * len(X))
 
     rfm_params = {
         "model": {
@@ -205,7 +198,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     if time_limit_s is not None:
         params = {
             # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-            "max_leaf_size": max_leaf_size,
+            "max_leaf_size": 60000,
             "use_temperature_tuning": False, # to speed up validation, but will be turned on for the final training
             "time_limit_s": time_limit_s,
             "rfm_params": rfm_params,
@@ -213,7 +206,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         }
     else:
         params = {
-            "max_leaf_size": max_leaf_size,
+            "max_leaf_size": 60000,
             "use_temperature_tuning": False,
             "rfm_params": rfm_params,
             "default_rfm_params": default_rfm_params,
@@ -299,11 +292,6 @@ def _resobjective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time
     exponent =  trial.suggest_float("exponent", 0.7, 1.4)
     norm_p = trial.suggest_float("norm_p", exponent, exponent + 0.8*(2-exponent))
     reg = trial.suggest_float("reg", 1e-6, 10, log=True)
-    
-    if not same_splits:
-        max_leaf_size = trial.suggest_int("max_leaf_size", int(0.01 * len(X)), int(0.5 * len(X)))
-    else:
-        max_leaf_size = int(subset_prop * len(X))
 
     rfm_params = {
         "model": {
@@ -335,7 +323,7 @@ def _resobjective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time
     if time_limit_s is not None:
         params = {
             # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-            "max_leaf_size": max_leaf_size,
+            "max_leaf_size": 60000,
             "use_temperature_tuning": False, # to speed up validation, but will be turned on for the final training
             "time_limit_s": time_limit_s,
             "rfm_params": rfm_params,
@@ -343,7 +331,7 @@ def _resobjective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time
         }
     else:
         params = {
-            "max_leaf_size": max_leaf_size,
+            "max_leaf_size": 60000,
             "use_temperature_tuning": False,
             "rfm_params": rfm_params,
             "default_rfm_params": default_rfm_params,

@@ -1,8 +1,6 @@
-
-import os
 from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split
-import openml
+from sklearn.datasets import fetch_california_housing
 
 
 if __name__ == "__main__":
@@ -17,15 +15,10 @@ if __name__ == "__main__":
     from models.training import train
     from models.testing import test
 
-    load_dotenv() 
-    
-    openml.config.apikey =  os.getenv("OPENML_KEY")
     # Load a binary classification dataset
-    dataset = openml.datasets.get_dataset('SpeedDating')
-    X, y, categorical_indicator, attribute_names = dataset.get_data(
-        target=dataset.default_target_attribute,
-        dataset_format='dataframe'
-    )
+    data = fetch_california_housing(as_frame=True)
+    X = data.data
+    y = data.target
     
     y = process_categorical_target(y)
 
@@ -37,6 +30,6 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     X_train, X_test = normalizeFeatures(X_train, X_test)
 
-    train(X_train, y_train, "models/speeddating", refit=True, hyperparameter_tuning_folds=3, trials=50)
+    train(X_train, y_train, "models/california_housing", refit=False, hyperparameter_tuning_folds=3, trials=50)
     
-    test(X_test, y_test, "models/speeddating")
+    test(X_test, y_test, "models/california_housing")

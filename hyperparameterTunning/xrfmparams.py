@@ -28,7 +28,6 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     exponent =  trial.suggest_float("exponent", 0.7, 1.4)
     norm_p = trial.suggest_float("norm_p", exponent, exponent + 0.8*(2-exponent))
     reg = trial.suggest_float("reg", 1e-6, 10, log=True)
-    subset_prop = trial.suggest_float("subset_prop", 0.10, 0.5) # from 10% to 50% of the data in each leaf
 
     rfm_params = {
         "model": {
@@ -60,7 +59,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
     if time_limit_s is not None:
         params = {
             # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
-            "max_leaf_size": int(subset_prop * len(X)),
+            "max_leaf_size": 60000,
             "use_temperature_tuning": False, # to speed up validation, but will be turned on for the final training
             "time_limit_s": time_limit_s,
             "rfm_params": rfm_params,
@@ -68,7 +67,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         }
     else:
         params = {
-            "max_leaf_size": int(subset_prop * len(X)),
+            "max_leaf_size": 60000,
             "use_temperature_tuning": False,
             "rfm_params": rfm_params,
             "default_rfm_params": default_rfm_params,
@@ -87,8 +86,7 @@ def _objective(trial: optuna.trial.Trial, X: pd.DataFrame, y: pd.Series, time_li
         y_val_arr = y_val_fold.to_numpy()
 
         # Initialize and train model (CUDA first, fallback to CPU on known xRFM CUDA bug)
-        split_subset_size = max(1000, int(0.8 * params["max_leaf_size"]))
-        model = xRFM(**params, device=preferred_device, tuning_metric=tuning_metric, split_subset_size=split_subset_size)
+        model = xRFM(**params, device=preferred_device, tuning_metric=tuning_metric)
         model.fit(X_train_arr, y_train_arr, X_val_arr, y_val_arr)
         
         # Evaluate performance
