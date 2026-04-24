@@ -1,0 +1,2 @@
+# Ignore the HIGGS.csv file and any other CSVs in the HIGGS.csv directory
+HIGGS.csv/*.csv
