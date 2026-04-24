@@ -30,3 +30,6 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+
+7gb data file
+HIGGS.csv/*.csv
