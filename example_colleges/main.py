@@ -92,6 +92,6 @@ if __name__ == "__main__":
 
     # 80 columns more manageable, otherwise overfit and too much memory
 
-    train(X_train, y_train, "models/colleges", refit=True, hyperparameter_tuning_folds=3, trials=50)
+    train(X_train, y_train, "models/colleges", refit=False, hyperparameter_tuning_folds=3, trials=50)
     
     test(X_test, y_test, "models/colleges")
