@@ -129,7 +129,7 @@ def _train_xrfm(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, 
     xrfm_params = {
         # min subset size as a proportion of the data (to prevent overfitting and ensure enough samples in each leaf)
         "max_leaf_size": 60000,
-        "use_temperature_tuning": True, # we turned this off for validation to speed it up, but we will turn it on for the final training
+        "use_temperature_tuning": False, # we turned this off for validation to speed it up, but we will turn it on for the final training
         "rfm_params": leaf_rfm_params,
         "default_rfm_params": split_rfm_params,
     }
